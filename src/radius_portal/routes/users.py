@@ -1,11 +1,26 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from flask import Blueprint, current_app, flash, redirect, render_template, request, url_for
-from flask import abort
+from flask import abort, g, session
+
+from radius_portal.utils.codes import generate_code
 
 bp = Blueprint("users", __name__)
+
+
+def _stash_code(username: str, code: str) -> None:
+    pending = session.get("pending_codes", {})
+    pending[username] = code
+    session["pending_codes"] = pending
+
+
+def _pop_code(username: str) -> str | None:
+    pending = session.get("pending_codes", {})
+    code = pending.pop(username, None)
+    session["pending_codes"] = pending
+    return code
 
 
 def parse_expiration(s: str) -> str:
@@ -20,7 +35,15 @@ def parse_expiration(s: str) -> str:
 
 
 @bp.get("/")
-def index():
+def front_page():
+    now = datetime.now()
+    default_exp = now + timedelta(days=5)
+    default_exp_str = default_exp.strftime("%Y-%m-%d %H:%M:%S")
+    return render_template("create_user.html", default_expiration=default_exp_str)
+
+
+@bp.get("/admin/users")
+def admin_users_list():
     repo = current_app.extensions["radius_repo"]
     repo.ensure_schema()
     users = repo.list_users()
@@ -31,7 +54,6 @@ def index():
 def create_user():
     repo = current_app.extensions["radius_repo"]
     username = (request.form.get("username") or "").strip()
-    password = request.form.get("password") or ""
     expiration_in = (request.form.get("expiration") or "").strip()
 
     if not username:
@@ -42,7 +64,8 @@ def create_user():
         flash(f"User {username} already exists.")
         return redirect(url_for("users.index"))
 
-    repo.upsert_radcheck(username, "Cleartext-Password", password)
+    code = generate_code(8)
+    repo.upsert_radcheck(username, "Cleartext-Password", code)
 
     if expiration_in:
         try:
@@ -51,57 +74,39 @@ def create_user():
         except ValueError as e:
             flash(str(e))
             return redirect(url_for("users.index"))
-
-    flash(f"Created user {username}.")
-    return redirect(url_for("users.index"))
-
-
-@bp.post("/users/set_password")
-def set_password():
-    repo = current_app.extensions["radius_repo"]
-    username = (request.form.get("username") or "").strip()
-    password = request.form.get("password") or ""
-
-    if not repo.user_exists(username):
-        flash(f"User {username} does not exist.")
+    else:
+        flash("Expiration is required.")
         return redirect(url_for("users.index"))
 
-    repo.upsert_radcheck(username, "Cleartext-Password", password)
-    flash(f"Updated password for {username}.")
-    return redirect(url_for("users.index"))
+    actor = getattr(g, "remote_user", "unkown")
+    
+    repo.upsert_user_meta_on_create(
+        username=username,
+        actor=actor,
+        note=None
+    )
+
+    repo.insert_audit_event(
+        actor=actor,
+        action="CREATE_USER",
+        target_username=username,
+        detail={"expiration_set": bool(expiration_in)}
+    )
+
+    _stash_code(username, code)
+    return redirect(url_for("users.show_code", username=username))
 
 
-@bp.post("/users/set_expiration")
-def set_expiration():
-    repo = current_app.extensions["radius_repo"]
-    username = (request.form.get("username") or "").strip()
-    expiration_in = (request.form.get("expiration") or "").strip()
+@bp.get("/users/<username>/code")
+def show_code(username: str):
+    code = _pop_code(username)
+    if not code:
+        return redirect(url_for("users.front_page"))
 
-    if not repo.user_exists(username):
-        flash(f"User {username} does not exist.")
-        return redirect(url_for("users.index"))
-
-    try:
-        exp = parse_expiration(expiration_in)
-    except ValueError as e:
-        flash(str(e))
-        return redirect(url_for("users.index"))
-
-    repo.upsert_radcheck(username, "Expiration", exp)
-    flash(f"Set expiration for {username} to {exp}.")
-    return redirect(url_for("users.index"))
+    return render_template("code_reveal.html", username=username, code=code)
 
 
-@bp.post("/users/clear_expiration")
-def clear_expiration():
-    repo = current_app.extensions["radius_repo"]
-    username = (request.form.get("username") or "").strip()
-    repo.delete_radcheck_attr(username, "Expiration")
-    flash(f"Cleared expiration for {username}.")
-    return redirect(url_for("users.index"))
-
-
-@bp.post("/users/delete")
+@bp.post("/admin/users/delete")
 def delete_user():
     repo = current_app.extensions["radius_repo"]
     username = (request.form.get("username") or "").strip()
@@ -110,60 +115,32 @@ def delete_user():
     return redirect(url_for("users.index"))
 
 
-@bp.get("/users/<username>")
+@bp.get("/admin/users/<username>")
 def edit_user(username: str):
     repo = current_app.extensions["radius_repo"]
     repo.ensure_schema()
     user = repo.get_user_details(username)
     if not user:
         abort(404)
-    return render_template("user_edit.html", user=user)
+
+    meta = repo.get_user_meta(username)
+    audit = repo.list_audit_events(username, limit=25)
+
+    return render_template("user_edit.html", user=user, meta=meta, audit=audit)
 
 
-@bp.post("/users/<username>/set_password")
-def set_password_for_user(username: str):
-    repo = current_app.extensions["radius_repo"]
-    password = request.form.get("password") or ""
-    if not repo.user_exists(username):
-        abort(404)
-
-    repo.upsert_radcheck(username, "Cleartext-Password", password)
-    flash(f"Updated password for {username}.")
-    return redirect(url_for("users.edit_user", username=username))
-
-
-@bp.post("/users/<username>/set_expiration")
-def set_expiration_for_user(username: str):
-    repo = current_app.extensions["radius_repo"]
-    expiration_in = (request.form.get("expiration") or "").strip()
-    if not repo.user_exists(username):
-        abort(404)
-
-    try:
-        exp = parse_expiration(expiration_in)
-    except ValueError as e:
-        flash(str(e))
-        return redirect(url_for("users.edit_user", username=username))
-
-    repo.upsert_radcheck(username, "Expiration", exp)
-    flash(f"Set expiration for {username} to {exp}.")
-    return redirect(url_for("users.edit_user", username=username))
-
-
-@bp.post("/users/<username>/clear_expiration")
-def clear_expiration_for_user(username: str):
-    repo = current_app.extensions["radius_repo"]
-    if not repo.user_exists(username):
-        abort(404)
-
-    repo.delete_radcheck_attr(username, "Expiration")
-    flash(f"Cleared expiration for {username}.")
-    return redirect(url_for("users.edit_user", username=username))
-
-
-@bp.post("/users/<username>/delete")
+@bp.post("/admin/users/<username>/delete")
 def delete_user_for_user(username: str):
     repo = current_app.extensions["radius_repo"]
     repo.delete_user(username)
+
+    actor = getattr(g, "remote_user", "unknown")
+    repo.insert_audit_event(
+        actor=actor,
+        action="DELETE_USER",
+        target_username=username,
+        detail={},
+    )
+
     flash(f"Deleted user {username}.")
     return redirect(url_for("users.index"))

@@ -1,5 +1,5 @@
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from dotenv import load_dotenv
 
@@ -16,6 +16,19 @@ class Config:
     db_user: str = os.getenv("RADIUS_DB_USER", "radius")
     db_pass: str = os.getenv("RADIUS_DB_PASS", "")
 
+    header_title: str = os.getenv("HEADER_TITLE", "RADIUS Portal")
+
+    #admin_users: list[str] = field(
+    #    default_factory=lambda: [
+    #        u.strip()
+    #        for u in os.getenv("PORTAL_ADMINS", "").split(",")
+    #        if u.strip()
+    #    ]
+    #)
+
+    admin_users: set[str] = ("rgingras", "admin")
+
     flask_host: str = os.getenv("FLASK_HOST", "127.0.0.1")
     flask_port: int = int(os.getenv("FLASK_PORT", "5000"))
     flask_debug: bool = os.getenv("FLASK_DEBUG", "0") == "1"
+    

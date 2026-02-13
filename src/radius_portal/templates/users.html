@@ -31,27 +31,8 @@
     <h2>Create user</h2>
     <form method="post" action="{{ url_for('users.create_user') }}">
       <label>Username</label><input name="username" required>
-      <label>Password</label><input name="password" required>
-      <label>Expiration (optional)</label><input name="expiration" placeholder="YYYY-MM-DD or YYYY-MM-DD HH:MM:SS">
+      <label>Expiration</label><input name="expiration" placeholder="YYYY-MM-DD or YYYY-MM-DD HH:MM:SS">
       <button type="submit">Create</button>
-    </form>
-
-    <h2>Update</h2>
-    <form method="post" action="{{ url_for('users.set_password') }}">
-      <label>Username</label><input name="username" required>
-      <label>New password</label><input name="password" required>
-      <button type="submit">Set password</button>
-    </form>
-
-    <form method="post" action="{{ url_for('users.set_expiration') }}">
-      <label>Username</label><input name="username" required>
-      <label>Expiration</label><input name="expiration" required>
-      <button type="submit">Set expiration</button>
-    </form>
-
-    <form method="post" action="{{ url_for('users.clear_expiration') }}">
-      <label>Username</label><input name="username" required>
-      <button type="submit">Clear expiration</button>
     </form>
   </aside>
 </div>

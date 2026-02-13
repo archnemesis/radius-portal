@@ -2,7 +2,7 @@
 {% block title %}Edit {{ user.username }} - RADIUS Portal{% endblock %}
 {% block content %}
 
-<p><a href="{{ url_for('users.index') }}">&larr; Back to users</a></p>
+<p><a href="{{ url_for('users.admin_users_list') }}">&larr; Back to users</a></p>
 
 <h2>Edit: {{ user.username }}</h2>
 
@@ -13,36 +13,36 @@
       <li><b>Password:</b> {{ "set" if user.password else "—" }}</li>
       <li><b>Expiration:</b> {{ user.expiration or "—" }}</li>
     </ul>
+
+
+  <h3>Audit</h3>
+  
+  {% if meta %}
+    <ul>
+      <li><b>Created:</b> {{ meta.created_at }} by <b>{{ meta.created_by }}</b></li>
+      <li><b>Last updated:</b> {{ meta.updated_at }} by <b>{{ meta.updated_by }}</b></li>
+      {% if meta.note %}<li><b>Note:</b> {{ meta.note }}</li>{% endif %}
+    </ul>
+  {% else %}
+    <p class="muted">No metadata recorded for this user yet.</p>
+  {% endif %}
+  
+  <table>
+    <thead>
+      <tr><th>When</th><th>Actor</th><th>Action</th><th>Detail</th></tr>
+    </thead>
+    <tbody>
+      {% for e in audit %}
+        <tr>
+          <td>{{ e.occurred_at }}</td>
+          <td>{{ e.actor }}</td>
+          <td>{{ e.action }}</td>
+          <td><pre style="margin:0; white-space:pre-wrap;">{{ e.detail | tojson }}</pre></td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
   </section>
-
-  <aside>
-    <h3>Set password</h3>
-    <form method="post" action="{{ url_for('users.set_password_for_user', username=user.username) }}">
-      <label>New password</label>
-      <input name="password" required>
-      <button type="submit">Update password</button>
-    </form>
-
-    <h3>Set expiration</h3>
-    <form method="post" action="{{ url_for('users.set_expiration_for_user', username=user.username) }}">
-      <label>Expiration (YYYY-MM-DD or YYYY-MM-DD HH:MM:SS)</label>
-      <input name="expiration" required>
-      <button type="submit">Set expiration</button>
-    </form>
-
-    <form method="post" action="{{ url_for('users.clear_expiration_for_user', username=user.username) }}">
-      <button type="submit">Clear expiration</button>
-    </form>
-
-    <hr>
-
-    <h3>Danger zone</h3>
-    <form method="post" action="{{ url_for('users.delete_user_for_user', username=user.username) }}">
-      <button class="danger" onclick="return confirm('Delete {{ user.username }}?')">
-        Delete user
-      </button>
-    </form>
-  </aside>
 </div>
 
 {% endblock %}

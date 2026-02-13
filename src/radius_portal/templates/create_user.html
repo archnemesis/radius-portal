@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Create Guest - {{ cfg.header_title }}{% endblock %}
+{% block content %}
+
+<div class="reveal-wrapper">
+  <section class="reveal-card">
+
+    <div class="reveal-header">
+      <div class="reveal-title">Create Guest Access</div>
+      <div class="reveal-subtitle">
+        Create a temporary account and generate a one-time access code.
+      </div>
+    </div>
+
+    <form method="post" action="{{ url_for('users.create_user') }}">
+      <div class="credential-block">
+        <div class="credential-label">Username</div>
+        <input class="input" name="username" placeholder="guest123" required>
+        <div class="hint">Use something simple: guest123, guest-alex, etc.</div>
+      </div>
+
+      <div class="credential-block">
+        <div class="credential-label">Expiration</div>
+        <input class="input" name="expiration" value="{{ default_expiration }}" required>
+        <div class="hint">Default is 5 days from now. Expired accounts are deleted automatically.</div>
+      </div>
+
+      <div class="reveal-actions">
+        <button class="btn" type="submit">Create + Generate Code</button>
+
+        {% if current_user and current_user in (g.admins or []) %}
+          <a class="btn btn-secondary" href="{{ url_for('users.admin_users_list') }}">Admin: Users</a>
+        {% endif %}
+      </div>
+    </form>
+
+    <div class="instruction" style="margin-top: 1.25rem;">
+      After creation, you’ll be taken to a page that shows the code once.
+    </div>
+
+  </section>
+</div>
+
+{% endblock %}
+

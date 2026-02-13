@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from typing import Optional
 
@@ -11,6 +12,25 @@ class RadiusUser:
     username: str
     password: Optional[str]
     expiration: Optional[str]
+
+
+@dataclass(frozen=True)
+class UserMeta:
+    username: str
+    created_at: str
+    created_by: str
+    updated_at: str
+    updated_by: str
+    note: Optional[str]
+
+
+@dataclass(frozen=True)
+class AuditEvent:
+    occurred_at: str
+    actor: str
+    action: str
+    target_username: Optional[str]
+    detail: dict[str, key]
 
 
 class RadiusRepo:
@@ -126,3 +146,83 @@ class RadiusRepo:
                 return None
 
             return RadiusUser(username=row[0], password=row[1], expiration=row[2])
+
+    def upsert_user_meta_on_create(self, username: str, actor: str, note: str | None = None) -> None:
+        """
+        Create user_meta row if missing; if it exists, only update updated_* (do NOT clobber created_*).
+        """
+        with self.pool.connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO portal.user_meta (username, created_by, updated_by, note)
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT (username) DO UPDATE
+                  SET updated_at = now(),
+                      updated_by = EXCLUDED.updated_by,
+                      note = COALESCE(EXCLUDED.note, portal.user_meta.note)
+                """,
+                (username, actor, actor, note),
+            )
+
+    def touch_user_meta(self, username: str, actor: str) -> None:
+        with self.pool.connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE portal.user_meta
+                   SET updated_at = now(),
+                       updated_by = %s
+                 WHERE username = %s
+                """,
+                (actor, username),
+            )
+
+    def get_user_meta(self, username: str) -> Optional[UserMeta]:
+        with self.pool.connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT username, created_at::text, created_by, updated_at::text, updated_by, note
+                  FROM portal.user_meta
+                 WHERE username = %s
+                """,
+                (username,),
+            )
+            row = cur.fetchone()
+            if not row:
+                return None
+            return UserMeta(*row)
+
+    def insert_audit_event(
+        self,
+        actor: str,
+        action: str,
+        target_username: str | None = None,
+        detail: dict[str, Any] | None = None,
+    ) -> None:
+        detail = detail or {}
+        with self.pool.connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO portal.audit_log (actor, action, target_username, detail)
+                VALUES (%s, %s, %s, %s::jsonb)
+                """,
+                (actor, action, target_username, json.dumps(detail)),
+            )
+
+    def list_audit_events(self, target_username: str, limit: int = 25) -> list[AuditEvent]:
+        with self.pool.connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT occurred_at::text, actor, action, target_username, detail
+                  FROM portal.audit_log
+                 WHERE target_username = %s
+                 ORDER BY occurred_at DESC
+                 LIMIT %s
+                """,
+                (target_username, limit),
+            )
+            rows = cur.fetchall()
+            out: list[AuditEvent] = []
+            for occurred_at, actor, action, target, detail in rows:
+                out.append(AuditEvent(occurred_at, actor, action, target, detail or {}))
+            return out
+

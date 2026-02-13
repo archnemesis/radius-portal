@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Access Code - {{ username }}{% endblock %}
+{% block content %}
+
+<div class="reveal-wrapper">
+  <section class="reveal-card">
+
+    <div class="reveal-header">
+      <div class="reveal-title">Guest Access Created</div>
+      <div class="reveal-subtitle">
+        Give these credentials to the guest.
+      </div>
+    </div>
+
+    {% if code %}
+      <div class="credential-block">
+        <div class="credential-label">Username</div>
+        <div class="credential-value mono">{{ username }}</div>
+      </div>
+
+      <div class="credential-block">
+        <div class="credential-label">Access Code</div>
+        <div class="code-box mono">{{ code }}</div>
+      </div>
+
+      <div class="instruction">
+        This code will not be shown again.
+        Make sure it is copied before leaving this page.
+      </div>
+
+      <div class="reveal-actions">
+        <button class="btn" type="button"
+                onclick="navigator.clipboard.writeText('{{ code }}')">
+          Copy Code
+        </button>
+
+        <a class="btn btn-secondary"
+           href="{{ url_for('users.front_page') }}">
+          Create Another
+        </a>
+      </div>
+    {% else %}
+      <div class="instruction">
+        No code available to display.
+        It may have already been viewed.
+      </div>
+    {% endif %}
+
+  </section>
+</div>
+
+{% endblock %}
+
